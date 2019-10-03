@@ -22,10 +22,13 @@ ST = SpatialTransformer(interp_method='linear', indexing='ij')
 x = ST([tf.convert_to_tensor(im_arr, np.float32),
         tf.convert_to_tensor(affine_matrix, np.float32)])
 
-plt.imshow(im_arr[0, ..., 90, 0])
-plt.colorbar()
+f, axs = plt.subplots(1, 2, figsize=(10, 4))
+ax1, ax2 = axs.ravel()
+ax1.imshow(im_arr[0, ..., 90, 0])
+ax1.set_title('before')
+
+ax2.imshow(x[0, ..., 90, 0])
+ax2.set_title('after idenity affine')
+
 plt.show()
 
-plt.imshow(x[0, ..., 90, 0])
-plt.colorbar()
-plt.show()
