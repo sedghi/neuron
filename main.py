@@ -149,6 +149,7 @@ class Registration():
         t = tf.reshape([self.x, self.y, self.z], (3, 1))
         affine_matrix = tf.concat([rot_matrix, t], axis=1)
         affine_matrix = tf.reshape(affine_matrix, (1, 3, 4))
+        # STN layer in neuro repo works with the difference of affine matrix with identity; hence:
         affine_matrix = affine_matrix - tf.Variable(initial_value=[[1, 0, 0, 0],
                                                                    [0, 1, 0, 0],
                                                                    [0, 0, 1, 0]], dtype=tf.float32, trainable=False)
