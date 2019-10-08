@@ -8,9 +8,21 @@ import SimpleITK as sitk
 import matplotlib.pyplot as plt
 from neuron.layers import SpatialTransformer
 from pathlib import Path
+import tensorflow.keras.backend as K
+
+from neuron.metrics import MeanSquaredError
 
 
 def transform_image(image, transform, reference_image, default_value=None, interpolator=sitk.sitkLinear):
+    """
+    transform an image with a given sitk transform
+    :param image: sitk image
+    :param transform: sitk transfrom to be used
+    :param reference_image: reference image used for resampling
+    :param default_value: default value pixel value if needed
+    :param interpolator: interpolator
+    :return: transformed image
+    """
     if default_value == None:
         default_value = reference_image[0, 0, 0]
     return sitk.Resample(image, reference_image, transform,
@@ -18,26 +30,33 @@ def transform_image(image, transform, reference_image, default_value=None, inter
 
 
 def rescale_zero_one(image):
-    image = sitk.RescaleIntensity(sitk.Cast(image, sitk.sitkFloat32), 0, 1)
-    return image
+    """
+    rescale intensities of an image to [0,1]
+    :param image: sitk image
+    :return: rescaled image to [0,1]
+    """
+    return sitk.RescaleIntensity(sitk.Cast(image, sitk.sitkFloat32), 0, 1)
 
 
 def read_sample_images(random_tx=False, rescale=False):
     """
-    Read a sample images (fixed and moving) for transformation
-    :return: image array with size (1,w,h,d,1), first dim is for batch size,
-    last dim is for channel (default tensorflow)
+    Read a sample images for the experiments
+    :param random_tx: random transform applied to the moving image if desired
+    :param rescale: rescaled intensities if desired
+    :return: image array with size (1,w,h,d,1), first dim is for batch size, last dim
+    for channels in tensorflow.
     """
     # fixed
     im_fixed = sitk.ReadImage(str(Path.cwd().joinpath("case051_T1.nii.gz")))
     if rescale_zero_one:
         im_fixed = rescale_zero_one(im_fixed)
     im_arr_fixed = sitk.GetArrayFromImage(im_fixed)
-    im_arr_fixed = np.swapaxes(im_arr_fixed, 0, 2)
+    im_arr_fixed = np.swapaxes(im_arr_fixed, 0, 2)  # need to swap axes because of sitk and numpy array order mismatch
     im_arr_fixed = np.expand_dims(im_arr_fixed, axis=-1)
     im_arr_fixed = np.expand_dims(im_arr_fixed, axis=0)
 
     if random_tx:
+        # random translation transform applied to the image
         tx = sitk.AffineTransform(3)
         tx.SetTranslation([10, 0, 0])
         im_moving = transform_image(im_fixed, tx, im_fixed)
@@ -48,19 +67,30 @@ def read_sample_images(random_tx=False, rescale=False):
     im_arr_moving = np.swapaxes(im_arr_moving, 0, 2)
     im_arr_moving = np.expand_dims(im_arr_moving, axis=-1)
     im_arr_moving = np.expand_dims(im_arr_moving, axis=0)
-    return im_arr_fixed, im_arr_moving
+    return im_arr_fixed, im_arr_moving, im_fixed.GetSpacing()
 
 
-def create_sample_translation_matrix():
+def create_identity_transform_stn():
+    """
+    create a sample Identity transformation matrix compatible with STN.
+    :return: 3D affine matrix in shape of (1,3,4) , 1 is for batch size
+    """
     affine_matrix = np.array([1, 0, 0, 0,
-                              0, 1, 0, 10,
-                              0, 0, 1, 10], dtype=np.float32)
+                              0, 1, 0, 0,
+                              0, 0, 1, 0], dtype=np.float32)
     affine_matrix_diff_from_identity = affine_matrix - ([1.0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])
     affine_matrix_diff_from_identity = affine_matrix_diff_from_identity.astype(np.float32)
     return np.reshape(affine_matrix_diff_from_identity, (1, 3, 4))
 
 
 def plot_side2side(before, after, title):
+    """
+    plotting tool for before and after registration
+    :param before: before transformation 3D array
+    :param after: after transformation 3D array
+    :param title: title of the plot
+    :return:
+    """
     n_slices = before.shape[-1]
     f, axs = plt.subplots(1, 2, figsize=(10, 5), constrained_layout=True)
     ax1, ax2 = axs.ravel()
@@ -76,20 +106,13 @@ def plot_side2side(before, after, title):
     plt.show()
 
 
-def load_model():
-    model_dir = Path.cwd().joinpath("model_dir")
-
-    cnn_model = tf.keras.models.load_model(str(model_dir.joinpath('model_checkpoint.hdf5')), compile=False)
-    for i in range(len(cnn_model.layers)):
-        cnn_model.layers[i].trainable = False
-
-    mean_npy = np.load(str(model_dir.joinpath("training_data_mean.npy")))
-    std_npy = np.load(str(model_dir.joinpath("training_data_std.npy")))
-    return cnn_model, mean_npy, std_npy
-
-
 def perform_test_affine_transform(arr):
-    tx = create_sample_translation_matrix()
+    """
+    perform an identity affine transformation for testing
+    :param arr: image array
+    :return:
+    """
+    tx = create_identity_transform_stn()
     ST = SpatialTransformer(interp_method='linear', indexing='ij')
     x = ST([tf.convert_to_tensor(arr), tf.convert_to_tensor(tx)])
     plot_side2side(arr, x, 'before after')
@@ -97,11 +120,25 @@ def perform_test_affine_transform(arr):
 
 
 class Registration():
-    def __init__(self, fixed, moving, x, y, z):
+    """
+    registration class used for transformation optimization
+    """
+
+    def __init__(self, fixed, moving, x, y, z, masked_loss=True):
+        """
+        parameters of the class are
+        :param fixed: fixed image array
+        :param moving: moving image array to be registered
+        :param x: translation in X as a trainable tf variable
+        :param y: translation in Y as a trainable tf variable
+        :param z: translation in Z as a trainable tf variable
+        :param masked_loss: whether to calculate the loss wrt to the masked head only (remove bg)
+        """
         self.stn = SpatialTransformer(interp_method='linear', indexing='ij')
         self.iteartion = 0
         self.fixed = fixed
         self.moving = moving
+        self.masked_loss = masked_loss
         self.x = x
         self.y = y
         self.z = z
@@ -117,41 +154,43 @@ class Registration():
                                                                    [0, 0, 1, 0]], dtype=tf.float32, trainable=False)
         transformed_moving = self.stn([self.moving, affine_matrix])
 
-        plt.imshow(np.array(tf.square(self.fixed - transformed_moving))[0, ..., 40, 0])
-        # plt.title(str(1))
-        plt.colorbar()
-        plt.show()
+        # plt.imshow(np.array(tf.cast(self.fixed > 0.05, tf.float32))[0, ..., 40, 0])
+        # plt.title("fixed")
+        # plt.colorbar()
+        # plt.show()
 
-        return tf.reduce_sum(tf.square(self.fixed - transformed_moving)) / tf.cast(tf.size(self.fixed), tf.float32)
+        if self.masked_loss:
+            mask_fixed = tf.cast(self.fixed > 0.05, tf.float32)  # good threshold for masking
+            return K.mean(
+                K.square(tf.boolean_mask(self.fixed, mask_fixed) - tf.boolean_mask(transformed_moving, mask_fixed)))
+        else:
+            return K.mean(K.square(self.fixed - transformed_moving))
 
 
 if __name__ == "__main__":
-    mode = "train"
-    im_arr_fixed, im_arr_moving = read_sample_images(random_tx=True, rescale=True)
-    if mode == "test":
-        perform_test_affine_transform(arr=im_arr_moving)
-    else:
-        # load cnn model and mean/std npys
-        # cnn_model, mean_npy, std_npy = load_model()
-        optimizer = keras.optimizers.SGD(learning_rate=1)
-        # affine_matrix, trainable_vars = create_trainable_translation_tf_params()
+    im_arr_fixed, im_arr_moving, spacings = read_sample_images(random_tx=True, rescale=True)
+    # perform_test_affine_transform(arr=im_arr_moving)
 
-        x = tf.Variable(0.01, name='x', trainable=True, dtype=tf.float32)
-        y = tf.Variable(0.01, name='y', trainable=True, dtype=tf.float32)
-        z = tf.Variable(0.01, name='z', trainable=True, dtype=tf.float32)
-        trainable_vars = [x, y, z]
+    # performing gradient descent on the translation parameters in the following
+    # we define 3 TF trainable variables, the loss function is MSE of the intensities in the images
+    # because we are working on a uni-modal case it is a good Loss function to perform registration
+    # moving image is shifted 10 mm in X direction, so a successful optimization needs to derive X variable
+    # as -5 (since each voxel is 2mm in the image), we hope to start X variable from initial value of -1 and it
+    # goes to -5
+    optimizer = keras.optimizers.SGD(learning_rate=10)
 
-        reg_model = Registration(fixed=im_arr_fixed, moving=im_arr_moving,
-                                 x=x, y=y, z=z)
+    x = tf.Variable(-1, name='x', trainable=True, dtype=tf.float32)
+    y = tf.Variable(0.0, name='y', trainable=True, dtype=tf.float32)
+    z = tf.Variable(0, name='z', trainable=True, dtype=tf.float32)
+    trainable_vars = [x, y, z]
 
-        for i in range(1000):
-            optimizer.minimize(reg_model.compute_loss, trainable_vars)
-            print("x:{},y:{},z:{}".format(reg_model.x.numpy(),
-                                          reg_model.y.numpy(),
-                                          reg_model.z.numpy()))
-            # with tf.GradientTape(persistent=True) as tape:
-            #     loss = reg_model.compute_loss(im_arr_fixed, im_arr_moving, trainable_vars)
-            # gradients = tape.gradient(loss, trainable_vars)
-            # optimizer.apply_gradients(zip(gradients, trainable_vars))
+    # creating registration model
+    reg_model = Registration(fixed=im_arr_fixed, moving=im_arr_moving,
+                             x=x, y=y, z=z, masked_loss=True)
 
-        # plot_side2side(im_arr_moving, x, 'before after')
+    for i in range(1000):
+        # minimizing the loss wrt the trainable variables that are x,y,z
+        optimizer.minimize(reg_model.compute_loss, trainable_vars)
+        print("x:{},y:{},z:{}".format(reg_model.x.numpy(),
+                                      reg_model.y.numpy(),
+                                      reg_model.z.numpy()))
