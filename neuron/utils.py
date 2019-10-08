@@ -24,18 +24,20 @@ import numpy as np
 from tqdm import tqdm_notebook as tqdm
 from pprint import pformat
 
-import pytools.patchlib as pl
-import pytools.timer as timer
+# import pytools.patchlib as pl
+# import pytools.timer as timer
 
 # local imports
-import pynd.ndutils as nd
+# import pynd.ndutils as nd
 
 # often changed file
 from imp import reload
-import keras
-import keras.backend as K
+import tensorflow.keras
+import tensorflow.keras.backend as K
 import tensorflow as tf
-reload(pl)
+
+
+# reload(pl)
 
 def interpn(vol, loc, interp_method='linear'):
     """
@@ -76,8 +78,8 @@ def interpn(vol, loc, interp_method='linear'):
 
     # flatten and float location Tensors
     loc = tf.cast(loc, 'float32')
-    
-    if isinstance(vol.shape, (tf.Dimension, tf.TensorShape)):
+
+    if isinstance(vol.shape, (tf.compat.v1.Dimension, tf.TensorShape)):
         volshape = vol.shape.as_list()
     else:
         volshape = vol.shape
@@ -134,7 +136,8 @@ def interpn(vol, loc, interp_method='linear'):
             wt = K.expand_dims(wt, -1)
             
             # compute final weighted value for each cube corner
-            interp_vol += wt * vol_val
+            # # Todo: alireza casted the following
+            interp_vol += tf.cast(wt, tf.float32) * tf.cast(vol_val, tf.float32)
         
     else:
         assert interp_method == 'nearest'
@@ -208,8 +211,8 @@ def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij'):
     TODO: 
         allow affine_matrix to be a vector of size nb_dims * (nb_dims + 1)
     """
-
-    if isinstance(volshape, (tf.Dimension, tf.TensorShape)):
+    # TODO: alireza edited the following tf.Dimension -> tf.compact.v1.Dimension
+    if isinstance(volshape, (tf.compat.v1.Dimension, tf.TensorShape)):
         volshape = volshape.as_list()
     
     if affine_matrix.dtype != 'float32':
@@ -276,7 +279,7 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij'):
     """
 
     # parse shapes
-    if isinstance(loc_shift.shape, (tf.Dimension, tf.TensorShape)):
+    if isinstance(loc_shift.shape, (tf.compat.v1.Dimension, tf.TensorShape)):
         volshape = loc_shift.shape[:-1].as_list()
     else:
         volshape = loc_shift.shape[:-1]

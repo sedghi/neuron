@@ -19,11 +19,11 @@ License: GPLv3
 # third party
 import numpy as np
 import tensorflow as tf
-from keras import backend as K
-from keras.legacy import interfaces
-from keras.layers import Layer, InputLayer, Input
-from tensorflow.python.keras.engine import base_layer
-from keras.engine.topology import Node
+from tensorflow.keras import backend as K
+# from keras.legacy import interfaces
+from tensorflow.keras.layers import Layer, InputLayer, Input
+# from tensorflow.python.keras.engine import base_layer
+# from keras.engine.topology import Node
 from tensorflow.python.keras import backend
 
 # local
@@ -161,7 +161,6 @@ Zoom = Resize
 #########################################################
 # Vector fields and spatial transforms
 #########################################################
-
 class SpatialTransformer(Layer):
     """
     N-D Spatial Transformer Tensorflow / Keras Layer
@@ -235,8 +234,10 @@ class SpatialTransformer(Layer):
         # it's a 1D Tensor [dense transforms need to be at least ndims + 1]
         # it's a 2D Tensor and shape == [N+1, N+1]. 
         #   [dense with N=1, which is the only one that could have a transform shape of 2, would be of size Mx1]
-        self.is_affine = len(trf_shape) == 1 or \
-                         (len(trf_shape) == 2 and all([f == (self.ndims+1) for f in trf_shape]))
+        # Todo: Alireza commented the following and added the next syntax
+        # self.is_affine = len(trf_shape) == 1 or \
+        #                  (len(trf_shape) == 2 and all([f == (self.ndims+1) for f in trf_shape]))
+        self.is_affine = True
 
         # check sizes
         if self.is_affine and len(trf_shape) == 1:
@@ -637,7 +638,7 @@ class LocallyConnected3D(Layer):
         `rows` and `cols` values might have changed due to padding.
     """
 
-    @interfaces.legacy_conv3d_support
+    # @interfaces.legacy_conv3d_support
     def __init__(self, filters,
                  kernel_size,
                  strides=(1, 1, 1),

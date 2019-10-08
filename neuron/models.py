@@ -17,11 +17,13 @@ from . import layers
 # third party
 import numpy as np
 import tensorflow as tf
-import keras
-import keras.layers as KL
-from keras.models import Model
-import keras.backend as K
-from keras.constraints import maxnorm
+from tensorflow import keras
+import tensorflow.keras.layers as KL
+from tensorflow.keras.models import Model
+import tensorflow.keras.backend as K
+
+
+# from tensorflow.keras.constraints import maxnorm
 
 
 ###############################################################################

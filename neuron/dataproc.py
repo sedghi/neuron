@@ -27,11 +27,13 @@ from subprocess import call
 
 
 # import local ndutils
-import pynd.ndutils as nd
+# import pynd.ndutils as nd
 import re
 
 from imp import reload
-reload(nd)
+
+
+# reload(nd)
 
 # from imp import reload # for re-loading modules, since some of the modules are still in development
 # reload(nd)

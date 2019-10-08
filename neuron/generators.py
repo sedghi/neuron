@@ -9,18 +9,18 @@ import zipfile
 import numpy as np
 import nibabel as nib
 import scipy
-import keras
-from keras.utils import np_utils 
-from keras.models import Model
+from tensorflow import keras
+# from keras.utils import np_utils
+# from keras.models import Model
 
 # local packages
-import pynd.ndutils as nd
-import pytools.patchlib as pl
-import pytools.timer as timer
+# import pynd.ndutils as nd
+# import pytools.patchlib as pl
+# import pytools.timer as timer
 
 # reload patchlib (it's often updated right now...)
-from imp import reload
-reload(pl)
+# from imp import reload
+# reload(pl)
 
 # other neuron (this project) packages
 from . import dataproc as nrn_proc
