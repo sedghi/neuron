@@ -56,9 +56,10 @@ def read_sample_images(random_tx=False, rescale=False):
     im_arr_fixed = np.expand_dims(im_arr_fixed, axis=0)
 
     if random_tx:
+        x, y, z = np.random.randint(-15, 15, 3)
         # random translation transform applied to the image
         tx = sitk.AffineTransform(3)
-        tx.SetTranslation([10, 0, 0])
+        tx.SetTranslation([int(x), int(y), int(z)])
         im_moving = transform_image(im_fixed, tx, im_fixed)
     else:
         im_moving = im_fixed
@@ -67,7 +68,7 @@ def read_sample_images(random_tx=False, rescale=False):
     im_arr_moving = np.swapaxes(im_arr_moving, 0, 2)
     im_arr_moving = np.expand_dims(im_arr_moving, axis=-1)
     im_arr_moving = np.expand_dims(im_arr_moving, axis=0)
-    return im_arr_fixed, im_arr_moving, im_fixed.GetSpacing()
+    return im_arr_fixed, im_arr_moving, im_fixed.GetSpacing(), [-x / 2, -y / 2, -z / 2]
 
 
 def create_identity_transform_stn():
@@ -142,6 +143,7 @@ class Registration():
         self.x = x
         self.y = y
         self.z = z
+        self.losses = []
 
     def compute_loss(self):
         self.iteartion += 1
@@ -162,14 +164,18 @@ class Registration():
 
         if self.masked_loss:
             mask_fixed = tf.cast(self.fixed > 0.05, tf.float32)  # good threshold for masking
-            return K.mean(
+            loss = K.mean(
                 K.square(tf.boolean_mask(self.fixed, mask_fixed) - tf.boolean_mask(transformed_moving, mask_fixed)))
         else:
-            return K.mean(K.square(self.fixed - transformed_moving))
+            loss = K.mean(K.square(self.fixed - transformed_moving))
+
+        self.losses.append(loss.numpy())
+        return loss
 
 
 if __name__ == "__main__":
-    im_arr_fixed, im_arr_moving, spacings = read_sample_images(random_tx=True, rescale=True)
+    im_arr_fixed, im_arr_moving, spacings, ground_truth = read_sample_images(random_tx=True, rescale=True)
+    print(ground_truth)
     # perform_test_affine_transform(arr=im_arr_moving)
 
     # performing gradient descent on the translation parameters in the following
@@ -178,10 +184,10 @@ if __name__ == "__main__":
     # moving image is shifted 10 mm in X direction, so a successful optimization needs to derive X variable
     # as -5 (since each voxel is 2mm in the image), we hope to start X variable from initial value of -1 and it
     # goes to -5
-    optimizer = keras.optimizers.SGD(learning_rate=10)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=1)
 
-    x = tf.Variable(-1, name='x', trainable=True, dtype=tf.float32)
-    y = tf.Variable(0.0, name='y', trainable=True, dtype=tf.float32)
+    x = tf.Variable(0, name='x', trainable=True, dtype=tf.float32)
+    y = tf.Variable(0, name='y', trainable=True, dtype=tf.float32)
     z = tf.Variable(0, name='z', trainable=True, dtype=tf.float32)
     trainable_vars = [x, y, z]
 
@@ -195,3 +201,12 @@ if __name__ == "__main__":
         print("x:{},y:{},z:{}".format(reg_model.x.numpy(),
                                       reg_model.y.numpy(),
                                       reg_model.z.numpy()))
+
+        if i % 50 == 49:
+            print("*" * 20)
+            print(ground_truth)
+            plt.plot(reg_model.losses)
+            plt.title('mse loss over time')
+            plt.xlabel('epochs')
+            plt.ylabel('mse')
+            plt.show()
